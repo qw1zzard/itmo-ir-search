@@ -1,3 +1,6 @@
+# Project specific
+hw_1/data/documents.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

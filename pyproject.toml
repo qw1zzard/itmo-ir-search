@@ -1,0 +1,15 @@
+[project]
+name = "itmo-ir-search"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+dependencies = [
+    "ipykernel>=7.2.0",
+    "matplotlib>=3.10.8",
+    "nltk>=3.9.4",
+    "pandas>=3.0.1",
+    "ruff>=0.15.8",
+    "spacy>=3.8.14",
+    "torch>=2.11.0",
+    "transformers>=5.4.0",
+]

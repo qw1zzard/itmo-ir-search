@@ -1,5 +1,8 @@
 # Project specific
-hw_1/data/documents.csv
+data/test
+data/training
+data/validation
+data/documents.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

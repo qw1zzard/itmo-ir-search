@@ -1,9 +1,15 @@
 # Project specific
-data/test
-data/training
-data/validation
-data/documents.csv
+data/en1k/test
+data/en1k/training
+data/en1k/validation
+data/mirage/doc_pool.json
+data/mirage/oracle.json
+data/en1k/documents.csv
+data/imat/imat2009_test_new.txt
+data/imat/imat2009_train_new.txt
+
 hw_2/results
+hw_3/catboost_info
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

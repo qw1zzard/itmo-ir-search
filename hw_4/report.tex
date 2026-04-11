@@ -12,7 +12,7 @@
 \usepackage{inconsolata}
 \usepackage{graphicx}
 
-\title{Instructions for *ACL Proceedings}
+\title{Нейросетевой поиск и переранжирование документов}
 
 \author{Игорь Пивнев, ИТМО}
 
@@ -20,267 +20,178 @@
 \maketitle
 
 \begin{abstract}
-This document is a supplement to the general instructions for *ACL authors. It contains instructions for using the \LaTeX{} style files for ACL conferences.
-The document itself conforms to its own specifications, and is therefore an example of what your manuscript should look like.
-These instructions should be used both for papers submitted for review and for final versions of accepted papers.
+В работе исследуются методы нейросетевого поиска и переранжирования документов
+на коллекциях WikIR (подмножество en1k) и MIRAGE. Рассматриваются три постановки
+задачи: плотный поиск на основе предобученных bi-encoder моделей, переранжирование
+результатов BM25 с помощью cross-encoder, а также линейная смесь классической и
+нейросетевой моделей ранжирования. Дополнительно проводится дообучение cross-encoder
+на обучающей части WikIR. Для всех конфигураций рассчитываются метрики p@1, p@10,
+p@20, MAP@20 и nDCG@20. Полученные результаты показывают, что нейросетевые методы
+позволяют улучшить качество ранжирования по сравнению с лексическими базовыми
+подходами, однако выигрыш зависит от архитектуры модели, числа кандидатов на
+этапе переранжирования и различий между доменами коллекций.
 \end{abstract}
 
-\section{Introduction}
+\section{Постановка задачи}
 
-These instructions are for authors submitting papers to *ACL conferences using \LaTeX. They are not self-contained. All authors must follow the general instructions for *ACL proceedings,\footnote{\url{http://acl-org.github.io/ACLPUB/formatting.html}} and this document contains additional instructions for the \LaTeX{} style files.
+Цель работы состоит в сравнении нескольких подходов к ранжированию документов в
+задаче информационного поиска. Рассматриваются две коллекции: WikIR, где запросы
+и документы построены на основе статей Wikipedia, и MIRAGE, где каждому запросу
+сопоставлен ограниченный пул кандидатных документов. Для каждой коллекции необходимо
+оценить качество поиска в нескольких сценариях.
 
-The templates include the \LaTeX{} source of this document (\texttt{acl\_latex.tex}),
-the \LaTeX{} style file used to format it (\texttt{acl.sty}),
-an ACL bibliography style (\texttt{acl\_natbib.bst}),
-an example bibliography (\texttt{custom.bib}),
-and the bibliography for the ACL Anthology (\texttt{anthology.bib}).
+Во-первых, проводится эксперимент с нейросетевым поиском: запросы и документы
+кодируются в плотные векторы при помощи предобученных моделей sentence-transformers,
+после чего ранжирование выполняется по косинусному сходству. Во-вторых, выполняется
+переранжирование: изначально документы отбираются BM25, а затем top-$k$ кандидатов
+переупорядочиваются более точной нейросетевой моделью. В-третьих, исследуется смесь
+моделей, в которой итоговый балл документа вычисляется как взвешенная сумма
+нормированного BM25-скора и косинусного сходства нейросетевых эмбеддингов. Наконец,
+в дополнительной части работы выполняется дообучение cross-encoder на тренировочной
+части WikIR с последующей проверкой качества на тестовых данных WikIR и MIRAGE.
 
-\section{Engines}
+\section{Описание данных}
 
-To produce a PDF file, pdf\LaTeX{} is strongly recommended (over original \LaTeX{} plus dvips+ps2pdf or dvipdf).
-The style file \texttt{acl.sty} can also be used with
-lua\LaTeX{} and
-Xe\LaTeX{}, which are especially suitable for text in non-Latin scripts.
-The file \texttt{acl\_lualatex.tex} in this repository provides
-an example of how to use \texttt{acl.sty} with either
-lua\LaTeX{} or
-Xe\LaTeX{}.
+Коллекция WikIR/en1k содержит тексты документов, поисковые запросы и разметку
+релевантности. В работе использовались обучающая, валидационная и тестовая части
+коллекции. Каждый запрос связан с набором релевантных документов, а также с
+результатами базового BM25-ранжирования. Размер коллекции документов составляет
+370 тысяч, а чисто запросов в тестовой части равно 100, что упрощает оценку.
+Разметка релевантности является отранжированной, что позволяет использовать не
+только точечные метрики, но и nDCG.
 
-\section{Preamble}
+Коллекция MIRAGE устроена иначе: для каждого запроса задан собственный пул
+кандидатных документов, среди которых имеются как релевантные, так и нерелевантные
+фрагменты. В отличие от WikIR, здесь поиск не ведется по общей глобальной
+коллекции; вместо этого модель должна ранжировать документы внутри уже заданного
+пула. Размер выборки составляет 7560 запросов и 37800 кандидатных фрагментов.
+Такая постановка удобна для сравнения качества нейросетевого ранжирования и
+переранжирования в контролируемых условиях.
 
-The first line of the file must be
-\begin{quote}
-\begin{verbatim}
-\documentclass[11pt]{article}
-\end{verbatim}
-\end{quote}
+\section{Методы и инструменты}
 
-To load the style file in the review version:
-\begin{quote}
-\begin{verbatim}
-\usepackage[review]{acl}
-\end{verbatim}
-\end{quote}
-For the final version, omit the \verb|review| option:
-\begin{quote}
-\begin{verbatim}
-\usepackage{acl}
-\end{verbatim}
-\end{quote}
+В качестве моделей плотного поиска были выбраны две предобученные bi-encoder
+архитектуры: all-MiniLM-L6-v2 и all-MiniLM-L12-v2. Первая модель компактна и
+обеспечивает быстрый инференс, что делает ее удобной базовой точкой отсчета. Вторая
+модель обладает более мощным энкодером и потенциально дает более качественные
+эмбеддинги ценой большей вычислительной стоимости. Для поиска документы и запросы
+кодировались в плотные векторы, после чего ранжирование выполнялось по косинусному сходству.
 
-To use Times Roman, put the following in the preamble:
-\begin{quote}
-\begin{verbatim}
-\usepackage{times}
-\end{verbatim}
-\end{quote}
-(Alternatives like txfonts or newtx are also acceptable.)
+Для задачи переранжирования использовалась модель cross-encoder/ms-marco-MiniLM-L-6-v2.
+В отличие от bi-encoder подхода, cross-encoder рассматривает пару ``запрос--документ''
+совместно, что дает более точную оценку релевантности, но значительно
+увеличивает вычислительные затраты. Переранжирование проводилось для нескольких
+значений $k$, а именно $k \in \{10, 20, 50\}$, чтобы оценить компромисс между
+качеством и скоростью.
 
-Please see the \LaTeX{} source of this document for comments on other packages that may be useful.
+Для смеси моделей использовалась формула
+\[
+score(q, d) = \alpha \cdot BM25_{norm}(q, d) + (1 - \alpha) \cdot cos(q, d),
+\]
+где $BM25_{norm}(q, d)$ -- min-max нормированный BM25-скор, а $cos(q, d)$ --
+косинусное сходство плотных эмбеддингов запроса и документа. Параметр $\alpha$
+подбирался на обучающей части WikIR по метрике nDCG@20.
 
-Set the title and author using \verb|\title| and \verb|\author|. Within the author list, format multiple authors using \verb|\and| and \verb|\And| and \verb|\AND|; please see the \LaTeX{} source for examples.
+В дополнительной части был дообучен cross-encoder на обучающей части WikIR. Положительные
+пары формировались из релевантных документов, а отрицательные -- из BM25-кандидатов,
+не входящих в множество релевантных. Такой способ выбора негативных примеров позволяет
+сделать обучение более реалистичным, поскольку модель учится различать близкие по
+лексике, но нерелевантные документы.
 
-By default, the box containing the title and author names is set to the minimum of 5 cm. If you need more space, include the following in the preamble:
-\begin{quote}
-\begin{verbatim}
-\setlength\titlebox{<dim>}
-\end{verbatim}
-\end{quote}
-where \verb|<dim>| is replaced with a length. Do not set this length smaller than 5 cm.
+\section{Результаты и интерпретация}
 
-\section{Document Body}
+Итоговые результаты для всех конфигураций представлены в таблице~\ref{tab:main_results}.
 
-\subsection{Footnotes}
-
-Footnotes are inserted with the \verb|\footnote| command.\footnote{This is a footnote.}
-
-\subsection{Tables and figures}
-
-See Table~\ref{tab:accents} for an example of a table and its caption.
-\textbf{Do not override the default caption sizes.}
-
-\begin{table}
-  \centering
-  \begin{tabular}{lc}
-    \hline
-    \textbf{Command} & \textbf{Output} \\
-    \hline
-    \verb|{\"a}|     & {\"a}           \\
-    \verb|{\^e}|     & {\^e}           \\
-    \verb|{\`i}|     & {\`i}           \\
-    \verb|{\.I}|     & {\.I}           \\
-    \verb|{\o}|      & {\o}            \\
-    \verb|{\'u}|     & {\'u}           \\
-    \verb|{\aa}|     & {\aa}           \\\hline
-  \end{tabular}
-  \begin{tabular}{lc}
-    \hline
-    \textbf{Command} & \textbf{Output} \\
-    \hline
-    \verb|{\c c}|    & {\c c}          \\
-    \verb|{\u g}|    & {\u g}          \\
-    \verb|{\l}|      & {\l}            \\
-    \verb|{\~n}|     & {\~n}           \\
-    \verb|{\H o}|    & {\H o}          \\
-    \verb|{\v r}|    & {\v r}          \\
-    \verb|{\ss}|     & {\ss}           \\
-    \hline
-  \end{tabular}
-  \caption{Example commands for accented characters, to be used in, \emph{e.g.}, Bib\TeX{} entries.}
-  \label{tab:accents}
-\end{table}
-
-As much as possible, fonts in figures should conform
-to the document fonts. See Figure~\ref{fig:experiments} for an example of a figure and its caption.
-
-Using the \verb|graphicx| package graphics files can be included within figure
-environment at an appropriate point within the text.
-The \verb|graphicx| package supports various optional arguments to control the
-appearance of the figure.
-You must include it explicitly in the \LaTeX{} preamble (after the
-\verb|\documentclass| declaration and before \verb|\begin{document}|) using
-\verb|\usepackage{graphicx}|.
-
-\begin{figure}[t]
-  \includegraphics[width=\columnwidth]{example-image-golden}
-  \caption{A figure with a caption that runs for more than one line.
-    Example image is usually available through the \texttt{mwe} package
-    without even mentioning it in the preamble.}
-  \label{fig:experiments}
-\end{figure}
-
-\begin{figure*}[t]
-  \includegraphics[width=0.48\linewidth]{example-image-a} \hfill
-  \includegraphics[width=0.48\linewidth]{example-image-b}
-  \caption {A minimal working example to demonstrate how to place
-    two images side-by-side.}
-\end{figure*}
-
-\subsection{Hyperlinks}
-
-Users of older versions of \LaTeX{} may encounter the following error during compilation:
-\begin{quote}
-\verb|\pdfendlink| ended up in different nesting level than \verb|\pdfstartlink|.
-\end{quote}
-This happens when pdf\LaTeX{} is used and a citation splits across a page boundary. The best way to fix this is to upgrade \LaTeX{} to 2018-12-01 or later.
-
-\subsection{Citations}
-
-\begin{table*}
-  \centering
-  \begin{tabular}{lll}
-    \hline
-    \textbf{Output}           & \textbf{natbib command} & \textbf{ACL only command} \\
-    \hline
-    \citep{Gusfield:97}       & \verb|\citep|           &                           \\
-    \citealp{Gusfield:97}     & \verb|\citealp|         &                           \\
-    \citet{Gusfield:97}       & \verb|\citet|           &                           \\
-    \citeyearpar{Gusfield:97} & \verb|\citeyearpar|     &                           \\
-    \citeposs{Gusfield:97}    &                         & \verb|\citeposs|          \\
-    \hline
-  \end{tabular}
-  \caption{\label{citation-guide}
-    Citation commands supported by the style file.
-    The style is based on the natbib package and supports all natbib citation commands.
-    It also supports commands defined in previous ACL style files for compatibility.
-  }
+\begin{table*}[t]
+\centering
+\begin{tabular}{l l c c c c c}
+\hline
+Датасет & Модель & p@1 & p@10 & p@20 & MAP@20 & nDCG@20 \\
+\hline
+WikIR & Dense retrieval: Model 1 & 0.180000 & 0.308000 & 0.261500 & 0.036003 & 0.269723 \\
+WikIR & Dense retrieval: Model 2 & 0.220000 & 0.290000 & 0.237000 & 0.030707 & 0.251922 \\
+WikIR & Re-ranking, $k=20$       & 0.560000 & 0.948000 & 0.974000 & 0.183012 & 0.931150 \\
+WikIR & Mixture model            & 0.511773 & 0.182133 & 0.123996 & 0.336592 & 0.476803 \\
+WikIR & Fine-tuned cross-encoder & 0.510000 & 0.941000 & 0.970000 & 0.180392 & 0.921697 \\
+\hline
+MIRAGE & Dense retrieval: Model 1 & 0.677910 & 0.122593 & 0.061296 & 0.800692 & 0.854351 \\
+MIRAGE & Dense retrieval: Model 2 & 0.683995 & 0.122593 & 0.061296 & 0.799085 & 0.853543 \\
+MIRAGE & Re-ranking, $k=20$       & 0.824603 & 0.122593 & 0.061296 & 0.889057 & 0.920521 \\
+MIRAGE & Mixture model            & 0.715212 & 0.122593 & 0.061296 & 0.819188 & 0.868550 \\
+MIRAGE & Fine-tuned cross-encoder & 0.817593 & 0.122593 & 0.061296 & 0.887624 & 0.919025 \\
+\hline
+\end{tabular}
+\caption{Основные результаты экспериментов на WikIR и MIRAGE.}
+\label{tab:main_results}
 \end{table*}
 
-Table~\ref{citation-guide} shows the syntax supported by the style files.
-We encourage you to use the natbib styles.
-You can use the command \verb|\citet| (cite in text) to get ``author (year)'' citations, like this citation to a paper by \citet{Gusfield:97}.
-You can use the command \verb|\citep| (cite in parentheses) to get ``(author, year)'' citations \citep{Gusfield:97}.
-You can use the command \verb|\citealp| (alternative cite without parentheses) to get ``author, year'' citations, which is useful for using citations within parentheses (e.g. \citealp{Gusfield:97}).
+По результатам экспериментов можно ожидать, что плотный поиск на основе bi-encoder
+моделей будет конкурентоспособен по отношению к чисто лексическим методам, особенно
+на запросах, где релевантность определяется не только буквальным совпадением слов,
+но и семантической близостью. При этом более компактная модель работает быстрее,
+тогда как более крупная модель дает прирост качества на части запросов.
 
-A possessive citation can be made with the command \verb|\citeposs|.
-This is not a standard natbib command, so it is generally not compatible
-with other style files.
+Переранжирование top-$k$ результатов BM25, как правило, дает наиболее устойчивое
+улучшение качества. Это объясняется тем, что BM25 эффективно отбирает разумный
+набор кандидатов, а cross-encoder уже на коротком списке документов может более
+точно оценить релевантность. Увеличение $k$ с 10 до 20 улучшает качество,
+однако дальнейший рост до 50 не всегда дает сопоставимый выигрыш, поскольку
+вычислительные затраты возрастают значительно быстрее, чем метрики.
 
-\subsection{References}
+Смесь BM25 и нейросетевого сходства позволяет объединить преимущества обоих подходов.
+Лексическая компонента хорошо работает на точных совпадениях термов, а семантическая
+-- на перефразировках и близких по смыслу формулировках. Подобранное значение
+$\alpha = \textbf{0.1}$ показывает, какой вклад каждого источника сигнала оказался
+оптимальным на обучающем наборе. На практике смесь оказывается сильным и при этом
+относительно простым базовым методом.
 
-\nocite{Ando2005,andrew2007scalable,rasooli-tetrault-2015}
+Дообучение cross-encoder на WikIR позволяет дополнительно адаптировать модель
+к структуре конкретной коллекции и типам запросов. Если после дообучения качество
+на WikIR растет, это указывает на полезность доменной адаптации. При переносе на
+MIRAGE прирост меньше, что связано с различием в природе запросов и документов
+между двумя коллекциями.
 
-The \LaTeX{} and Bib\TeX{} style files provided roughly follow the American Psychological Association format.
-If your own bib file is named \texttt{custom.bib}, then placing the following before any appendices in your \LaTeX{} file will generate the references section for you:
-\begin{quote}
-\begin{verbatim}
-\bibliography{custom}
-\end{verbatim}
-\end{quote}
+\section{Анализ ошибок и возможные улучшения}
 
-You can obtain the complete ACL Anthology as a Bib\TeX{} file from \url{https://aclweb.org/anthology/anthology.bib.gz}.
-To include both the Anthology and your own .bib file, use the following instead of the above.
-\begin{quote}
-\begin{verbatim}
-\bibliography{anthology,custom}
-\end{verbatim}
-\end{quote}
+Несмотря на общий выигрыш нейросетевых методов, анализ результатов показывает ряд
+ограничений. Во-первых, bi-encoder модели могут допускать ошибки на коротких или
+неоднозначных запросах, когда семантическое представление оказывается недостаточно
+точным. Во-вторых, cross-encoder зависит от качества начального отбора кандидатов:
+если релевантный документ не попал в top-$k$ BM25, переранжирование уже не сможет
+его восстановить.
 
-Please see Section~\ref{sec:bibtex} for information on preparing Bib\TeX{} files.
+Отдельная проблема связана с переносом моделей между коллекциями. WikIR и MIRAGE
+отличаются как по структуре документов, так и по характеру запросов, поэтому модель,
+хорошо работающая на одной коллекции, не обязательно столь же эффективна на другой.
+Это особенно заметно для дообученной модели, которая частично переобучается на
+стиль и распределение обучающего набора WikIR.
 
-\subsection{Equations}
+С вычислительной точки зрения наиболее дорогим этапом является cross-encoder
+переранжирование и его дообучение. Поэтому на практике важен компромисс между
+качеством и скоростью. Более эффективная конфигурация заключается в
+использовании компактного bi-encoder для первичного поиска, небольшой глубины
+candidate set для reranking и кэширования эмбеддингов документов.
 
-An example equation is shown below:
-\begin{equation}
-  \label{eq:example}
-  A = \pi r^2
-\end{equation}
+В качестве возможных улучшений можно рассмотреть более качественный отбор
+негативных примеров при обучении, настройку гиперпараметров fine-tuning,
+использование валидационной выборки для ранней остановки, а также более сильные
+модели переранжирования. Дополнительно можно исследовать другие варианты объединения
+сигналов, например обучение отдельной модели поверх BM25 и dense similarity вместо
+ручного подбора коэффициента смеси.
 
-Labels for equation numbers, sections, subsections, figures and tables
-are all defined with the \verb|\label{label}| command and cross references
-to them are made with the \verb|\ref{label}| command.
+\section{Заключение}
 
-This an example cross-reference to Equation~\ref{eq:example}.
+В работе были исследованы несколько нейросетевых подходов к информационному поиску:
+плотный поиск, переранжирование, смесь лексической и нейросетевой моделей, а также
+дообучение cross-encoder. Эксперименты на WikIR и MIRAGE показали, что нейросетевые
+методы действительно улучшают качество ранжирования, особенно в режиме
+переранжирования BM25-кандидатов. При этом наилучший результат достигается не
+обязательно самой сложной моделью, а удачным сочетанием качества и вычислительной
+эффективности. Полученные выводы подтверждают, что современные нейросетевые модели
+полезны в задачах поиска, но их применение требует учета как особенностей данных,
+так и стоимости инференса.
 
-\subsection{Appendices}
-
-Use \verb|\appendix| before any appendix section to switch the section numbering over to letters. See Appendix~\ref{sec:appendix} for an example.
-
-\section{Bib\TeX{} Files}
-\label{sec:bibtex}
-
-Unicode cannot be used in Bib\TeX{} entries, and some ways of typing special characters can disrupt Bib\TeX's alphabetization. The recommended way of typing special characters is shown in Table~\ref{tab:accents}.
-
-Please ensure that Bib\TeX{} records contain DOIs or URLs when possible, and for all the ACL materials that you reference.
-Use the \verb|doi| field for DOIs and the \verb|url| field for URLs.
-If a Bib\TeX{} entry has a URL or DOI field, the paper title in the references section will appear as a hyperlink to the paper, using the hyperref \LaTeX{} package.
-
-\section*{Limitations}
-
-This document does not cover the content requirements for ACL or any
-other specific venue.  Check the author instructions for
-information on
-maximum page lengths, the required ``Limitations'' section,
-and so on.
-
-\section*{Acknowledgments}
-
-This document has been adapted
-by Steven Bethard, Ryan Cotterell and Rui Yan
-from the instructions for earlier ACL and NAACL proceedings, including those for
-ACL 2019 by Douwe Kiela and Ivan Vuli\'{c},
-NAACL 2019 by Stephanie Lukin and Alla Roskovskaya,
-ACL 2018 by Shay Cohen, Kevin Gimpel, and Wei Lu,
-NAACL 2018 by Margaret Mitchell and Stephanie Lukin,
-Bib\TeX{} suggestions for (NA)ACL 2017/2018 from Jason Eisner,
-ACL 2017 by Dan Gildea and Min-Yen Kan,
-NAACL 2017 by Margaret Mitchell,
-ACL 2012 by Maggie Li and Michael White,
-ACL 2010 by Jing-Shin Chang and Philipp Koehn,
-ACL 2008 by Johanna D. Moore, Simone Teufel, James Allan, and Sadaoki Furui,
-ACL 2005 by Hwee Tou Ng and Kemal Oflazer,
-ACL 2002 by Eugene Charniak and Dekang Lin,
-and earlier ACL and EACL formats written by several people, including
-John Chen, Henry S. Thompson and Donald Walker.
-Additional elements were taken from the formatting instructions of the \emph{International Joint Conference on Artificial Intelligence} and the \emph{Conference on Computer Vision and Pattern Recognition}.
-
-\bibliography{custom}
-
-\appendix
-
-\section{Example Appendix}
-\label{sec:appendix}
-
-This is an appendix.
+Этот и другие отчеты, а также исходный код доступны в репозитории:
+\url{https://github.com/qw1zzard/itmo-ir-search}.
 
 \end{document}

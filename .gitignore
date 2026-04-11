@@ -1,4 +1,5 @@
 # Project specific
+data/cache
 data/en1k/test
 data/en1k/training
 data/en1k/validation

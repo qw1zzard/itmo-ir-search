@@ -1,0 +1,204 @@
+\documentclass[11pt]{article}
+\usepackage[final]{acl}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setdefaultlanguage{russian}
+\setotherlanguage{english}
+\setmainfont{Times New Roman}
+\newfontfamily\cyrillicfont{Times New Roman}
+\usepackage{microtype}
+\usepackage{inconsolata}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+\title{Question Answering}
+
+\author{Игорь Пивнев, ИТМО}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+В работе исследуются методы автоматического ответа на вопросы на коллекции MIRAGE.
+Рассматриваются два подхода: экстрактивный QA на основе модели RoBERTa и
+генеративный QA на основе инструкционной языковой модели Qwen2.5-1.5B-Instruct.
+Эксперименты проводятся в режимах oracle (верный документ), top-1 и top-5
+(конкатенация фрагментов) с использованием двух ранкеров: BM25 и CrossEncoder.
+Для оценки используются метрики EM, F1 (SQuAD-стиль), EM-strict, EM-loose
+(MIRAGE-стиль) и BERTScore. Дополнительно применяется подход LLM-as-a-judge
+для анализа качества ответов.
+\end{abstract}
+
+\section{Постановка задачи}
+
+Задача question answering (QA) состоит в автоматическом формировании ответа
+на естественно-языковой вопрос на основе текстовых документов.
+
+Рассматриваются два сценария. В режиме \emph{oracle} системе передаётся
+гарантированно релевантный фрагмент, что позволяет оценить верхнюю границу
+качества при идеальном ретривере. В режиме \emph{retriever-augmented} (RAG)
+контекст формируется автоматически с помощью ранкеров (top-1 или top-5).
+
+Таким образом, задача разбивается на две части: поиск релевантного документа
+и генерация ответа.
+
+\section{Описание данных}
+
+Коллекция MIRAGE содержит 7560 пар вопрос--ответ из нескольких источников
+(NaturalQA, PopQA, TriviaQA и др.). Каждому вопросу сопоставлен список
+эталонных ответов, а также пул из 5 кандидатных документов, один из которых
+является релевантным.
+
+Пример запроса:
+\begin{quote}
+\textit{What is John Mayne's occupation?}
+\end{quote}
+
+Пример ответа:
+\begin{quote}
+\textit{journalist}
+\end{quote}
+
+\section{Методы и модели}
+
+\subsection{Экстрактивный QA}
+
+Используется модель \texttt{deepset/roberta-base-squad2}, обученная на SQuAD~2.0.
+Модель предсказывает начало и конец ответа внутри документа.
+
+В режиме top-5 модель применяется к каждому из фрагментов, после чего
+выбирается ответ с максимальным confidence score.
+
+\subsection{Генеративный QA}
+
+Используется модель \texttt{Qwen2.5-1.5B-Instruct}. Ответ генерируется
+по шаблону:
+
+\begin{quote}
+\texttt{Answer the question concisely based on the context.}
+\end{quote}
+
+Генерация выполняется жадным декодированием с ограничением длины ответа.
+
+\subsection{Ранкеры}
+
+Используются два ранкера:
+\begin{itemize}
+    \item BM25;
+    \item CrossEncoder (\texttt{ms-marco-MiniLM-L-6-v2}).
+\end{itemize}
+
+Полнота (recall) релевантного документа:
+\begin{itemize}
+    \item BM25: 0.464 при top-1, 1.0 при top-5;
+    \item CrossEncoder: 0.803 при top-1, 1.0 при top-5.
+\end{itemize}
+
+\subsection{Метрики}
+
+Используются следующие метрики:
+\begin{itemize}
+    \item EM и F1 (SQuAD);
+    \item EM-strict и EM-loose (MIRAGE);
+    \item BERTScore.
+\end{itemize}
+
+\section{Результаты}
+
+\begin{table*}[t]
+\centering
+\small
+\begin{tabular}{llccccc}
+\toprule
+Модель & Контекст & EM & F1 & EM-strict & EM-loose & BERTScore \\
+\midrule
+RoBERTa (extractive) & Oracle      & 0.6392 & 0.7519 & 0.6392 & 0.8103 & 0.9522 \\
+RoBERTa (extractive) & BM25 топ-1  & 0.3265 & 0.4076 & 0.3265 & 0.4459 & 0.9009 \\
+RoBERTa (extractive) & CE топ-1    & 0.5396 & 0.6403 & 0.5396 & 0.6880 & 0.9392 \\
+RoBERTa (extractive) & BM25 топ-5  & 0.5216 & 0.6119 & 0.5216 & 0.6512 & 0.9357 \\
+RoBERTa (extractive) & CE топ-5    & 0.5216 & 0.6119 & 0.5216 & 0.6512 & 0.9357 \\
+RoBERTa (extractive) & Mixed       & 0.5216 & 0.6119 & 0.5216 & 0.6512 & 0.9357 \\
+\midrule
+Qwen2.5-1.5B (gen)   & Oracle      & 0.4858 & 0.6608 & 0.4858 & 0.8634 & 0.9339 \\
+Qwen2.5-1.5B (gen)   & BM25 топ-1  & 0.2464 & 0.3552 & 0.2464 & 0.4521 & 0.8921 \\
+Qwen2.5-1.5B (gen)   & CE топ-1    & 0.4094 & 0.5629 & 0.4094 & 0.7287 & 0.9219 \\
+Qwen2.5-1.5B (gen)   & BM25 топ-5  & 0.2061 & 0.3567 & 0.2061 & 0.6470 & 0.8906 \\
+Qwen2.5-1.5B (gen)   & CE топ-5    & 0.2594 & 0.4291 & 0.2594 & 0.7646 & 0.9015 \\
+Qwen2.5-1.5B (gen)   & Mixed       & 0.2844 & 0.4480 & 0.2844 & 0.7544 & 0.9043 \\
+\bottomrule
+\end{tabular}
+\caption{Основные результаты экспериментов на MIRAGE}
+\label{tab:main}
+\end{table*}
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+Конфигурация & LLM-judge & EM & EM-loose & F1 & BERTScore \\
+\midrule
+ext oracle   & 0.1312 & 0.6392 & 0.8103 & 0.7519 & 0.9522 \\
+gen oracle   & 0.2546 & 0.4858 & 0.8634 & 0.6608 & 0.9339 \\
+ext CE топ-1 & 0.1128 & 0.5396 & 0.6880 & 0.6403 & 0.9392 \\
+gen CE топ-1 & 0.2232 & 0.4094 & 0.7287 & 0.5629 & 0.9219 \\
+\bottomrule
+\end{tabular}
+\caption{LLM-as-a-judge vs автоматические метрики}
+\label{tab:judge}
+\end{table}
+
+\section{Анализ результатов}
+
+\subsection{Oracle vs retriever}
+
+В oracle режиме достигается максимальное качество.
+Экстрактивная модель показывает EM=0.6392, тогда как генеративная — 0.4858.
+Разница объясняется тем, что извлечение точного ответа проще при наличии
+релевантного документа.
+
+\subsection{Влияние ранкера}
+
+CrossEncoder значительно превосходит BM25 при top-1 (recall 0.803 против 0.464),
+что приводит к заметному росту качества QA.
+
+\subsection{Top-1 vs top-5}
+
+Переход к top-5 повышает качество для экстрактивной модели,
+так как релевантный документ почти всегда присутствует в наборе.
+
+Для генеративной модели увеличение контекста не даёт прироста,
+а иногда ухудшает результат из-за добавления нерелевантной информации.
+
+\subsection{Экстрактивный vs генеративный подход}
+
+Экстрактивная модель лучше по EM и F1.
+Генеративная модель показывает более высокие значения EM-loose,
+что связано с вариативностью формулировок ответов.
+
+\subsection{LLM-as-a-judge}
+
+Метрика LLM-as-a-judge слабо коррелирует с EM,
+но ближе к EM-loose. Генеративная модель получает более высокие оценки,
+что связано с семантической гибкостью ответов.
+
+\section{Заключение}
+
+В работе сравнивались экстрактивный и генеративный подходы к QA на MIRAGE.
+
+Основные выводы:
+\begin{itemize}
+\item Экстрактивная модель обеспечивает наилучшее качество при наличии
+      релевантного документа.
+\item CrossEncoder значительно улучшает качество RAG по сравнению с BM25.
+\item Использование top-5 полезно для экстрактивного QA, но не для генеративного.
+\item Генеративные модели лучше отражают семантическое сходство,
+      но уступают по точным метрикам.
+\end{itemize}
+
+Этот и другие отчeты, а также исходный код доступны в репозитории:
+\url{https://github.com/qw1zzard/itmo-ir-search}.
+
+\end{document}

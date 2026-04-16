@@ -21,267 +21,184 @@
 \maketitle
 
 \begin{abstract}
-This document is a supplement to the general instructions for *ACL authors. It contains instructions for using the \LaTeX{} style files for ACL conferences.
-The document itself conforms to its own specifications, and is therefore an example of what your manuscript should look like.
-These instructions should be used both for papers submitted for review and for final versions of accepted papers.
+В работе исследуются методы автоматического ответа на вопросы на коллекции MIRAGE.
+Рассматриваются два подхода: экстрактивный QA на основе модели RoBERTa и
+генеративный QA на основе инструкционной языковой модели Qwen2.5-1.5B-Instruct.
+Эксперименты проводятся в режимах oracle (верный документ), top-1 и top-5
+(конкатенация фрагментов) с использованием двух ранкеров: BM25 и CrossEncoder.
+Для оценки используются метрики EM, F1 (SQuAD-стиль), EM-strict, EM-loose
+(MIRAGE-стиль) и BERTScore. Дополнительно применяется подход LLM-as-a-judge
+для анализа качества ответов.
 \end{abstract}
 
-\section{Introduction}
+\section{Постановка задачи}
 
-These instructions are for authors submitting papers to *ACL conferences using \LaTeX. They are not self-contained. All authors must follow the general instructions for *ACL proceedings,\footnote{\url{http://acl-org.github.io/ACLPUB/formatting.html}} and this document contains additional instructions for the \LaTeX{} style files.
+Задача question answering (QA) состоит в автоматическом формировании ответа
+на естественно-языковой вопрос на основе текстовых документов.
 
-The templates include the \LaTeX{} source of this document (\texttt{acl\_latex.tex}),
-the \LaTeX{} style file used to format it (\texttt{acl.sty}),
-an ACL bibliography style (\texttt{acl\_natbib.bst}),
-an example bibliography (\texttt{custom.bib}),
-and the bibliography for the ACL Anthology (\texttt{anthology.bib}).
+Рассматриваются два сценария. В режиме \emph{oracle} системе передаётся
+гарантированно релевантный фрагмент, что позволяет оценить верхнюю границу
+качества при идеальном ретривере. В режиме \emph{retriever-augmented} (RAG)
+контекст формируется автоматически с помощью ранкеров (top-1 или top-5).
 
-\section{Engines}
+Таким образом, задача разбивается на две части: поиск релевантного документа
+и генерация ответа.
 
-To produce a PDF file, pdf\LaTeX{} is strongly recommended (over original \LaTeX{} plus dvips+ps2pdf or dvipdf).
-The style file \texttt{acl.sty} can also be used with
-lua\LaTeX{} and
-Xe\LaTeX{}, which are especially suitable for text in non-Latin scripts.
-The file \texttt{acl\_lualatex.tex} in this repository provides
-an example of how to use \texttt{acl.sty} with either
-lua\LaTeX{} or
-Xe\LaTeX{}.
+\section{Описание данных}
 
-\section{Preamble}
+Коллекция MIRAGE содержит 7560 пар вопрос--ответ из нескольких источников
+(NaturalQA, PopQA, TriviaQA и др.). Каждому вопросу сопоставлен список
+эталонных ответов, а также пул из 5 кандидатных документов, один из которых
+является релевантным.
 
-The first line of the file must be
+Пример запроса:
 \begin{quote}
-\begin{verbatim}
-\documentclass[11pt]{article}
-\end{verbatim}
+\textit{What is John Mayne's occupation?}
 \end{quote}
 
-To load the style file in the review version:
+Пример ответа:
 \begin{quote}
-\begin{verbatim}
-\usepackage[review]{acl}
-\end{verbatim}
-\end{quote}
-For the final version, omit the \verb|review| option:
-\begin{quote}
-\begin{verbatim}
-\usepackage{acl}
-\end{verbatim}
+\textit{journalist}
 \end{quote}
 
-To use Times Roman, put the following in the preamble:
+\section{Методы и модели}
+
+\subsection{Экстрактивный QA}
+
+Используется модель \texttt{deepset/roberta-base-squad2}, обученная на SQuAD~2.0.
+Модель предсказывает начало и конец ответа внутри документа.
+
+В режиме top-5 модель применяется к каждому из фрагментов, после чего
+выбирается ответ с максимальным confidence score.
+
+\subsection{Генеративный QA}
+
+Используется модель \texttt{Qwen2.5-1.5B-Instruct}. Ответ генерируется
+по шаблону:
+
 \begin{quote}
-\begin{verbatim}
-\usepackage{times}
-\end{verbatim}
+\texttt{Answer the question concisely based on the context.}
 \end{quote}
-(Alternatives like txfonts or newtx are also acceptable.)
 
-Please see the \LaTeX{} source of this document for comments on other packages that may be useful.
+Генерация выполняется жадным декодированием с ограничением длины ответа.
 
-Set the title and author using \verb|\title| and \verb|\author|. Within the author list, format multiple authors using \verb|\and| and \verb|\And| and \verb|\AND|; please see the \LaTeX{} source for examples.
+\subsection{Ранкеры}
 
-By default, the box containing the title and author names is set to the minimum of 5 cm. If you need more space, include the following in the preamble:
-\begin{quote}
-\begin{verbatim}
-\setlength\titlebox{<dim>}
-\end{verbatim}
-\end{quote}
-where \verb|<dim>| is replaced with a length. Do not set this length smaller than 5 cm.
+Используются два ранкера:
+\begin{itemize}
+    \item BM25;
+    \item CrossEncoder (\texttt{ms-marco-MiniLM-L-6-v2}).
+\end{itemize}
 
-\section{Document Body}
+Полнота (recall) релевантного документа:
+\begin{itemize}
+    \item BM25: 0.464 при top-1, 1.0 при top-5;
+    \item CrossEncoder: 0.803 при top-1, 1.0 при top-5.
+\end{itemize}
 
-\subsection{Footnotes}
+\subsection{Метрики}
 
-Footnotes are inserted with the \verb|\footnote| command.\footnote{This is a footnote.}
+Используются следующие метрики:
+\begin{itemize}
+    \item EM и F1 (SQuAD);
+    \item EM-strict и EM-loose (MIRAGE);
+    \item BERTScore.
+\end{itemize}
 
-\subsection{Tables and figures}
+\section{Результаты}
 
-See Table~\ref{tab:accents} for an example of a table and its caption.
-\textbf{Do not override the default caption sizes.}
-
-\begin{table}
-  \centering
-  \begin{tabular}{lc}
-    \hline
-    \textbf{Command} & \textbf{Output} \\
-    \hline
-    \verb|{\"a}|     & {\"a}           \\
-    \verb|{\^e}|     & {\^e}           \\
-    \verb|{\`i}|     & {\`i}           \\
-    \verb|{\.I}|     & {\.I}           \\
-    \verb|{\o}|      & {\o}            \\
-    \verb|{\'u}|     & {\'u}           \\
-    \verb|{\aa}|     & {\aa}           \\\hline
-  \end{tabular}
-  \begin{tabular}{lc}
-    \hline
-    \textbf{Command} & \textbf{Output} \\
-    \hline
-    \verb|{\c c}|    & {\c c}          \\
-    \verb|{\u g}|    & {\u g}          \\
-    \verb|{\l}|      & {\l}            \\
-    \verb|{\~n}|     & {\~n}           \\
-    \verb|{\H o}|    & {\H o}          \\
-    \verb|{\v r}|    & {\v r}          \\
-    \verb|{\ss}|     & {\ss}           \\
-    \hline
-  \end{tabular}
-  \caption{Example commands for accented characters, to be used in, \emph{e.g.}, Bib\TeX{} entries.}
-  \label{tab:accents}
-\end{table}
-
-As much as possible, fonts in figures should conform
-to the document fonts. See Figure~\ref{fig:experiments} for an example of a figure and its caption.
-
-Using the \verb|graphicx| package graphics files can be included within figure
-environment at an appropriate point within the text.
-The \verb|graphicx| package supports various optional arguments to control the
-appearance of the figure.
-You must include it explicitly in the \LaTeX{} preamble (after the
-\verb|\documentclass| declaration and before \verb|\begin{document}|) using
-\verb|\usepackage{graphicx}|.
-
-\begin{figure}[t]
-  \includegraphics[width=\columnwidth]{example-image-golden}
-  \caption{A figure with a caption that runs for more than one line.
-    Example image is usually available through the \texttt{mwe} package
-    without even mentioning it in the preamble.}
-  \label{fig:experiments}
-\end{figure}
-
-\begin{figure*}[t]
-  \includegraphics[width=0.48\linewidth]{example-image-a} \hfill
-  \includegraphics[width=0.48\linewidth]{example-image-b}
-  \caption {A minimal working example to demonstrate how to place
-    two images side-by-side.}
-\end{figure*}
-
-\subsection{Hyperlinks}
-
-Users of older versions of \LaTeX{} may encounter the following error during compilation:
-\begin{quote}
-\verb|\pdfendlink| ended up in different nesting level than \verb|\pdfstartlink|.
-\end{quote}
-This happens when pdf\LaTeX{} is used and a citation splits across a page boundary. The best way to fix this is to upgrade \LaTeX{} to 2018-12-01 or later.
-
-\subsection{Citations}
-
-\begin{table*}
-  \centering
-  \begin{tabular}{lll}
-    \hline
-    \textbf{Output}           & \textbf{natbib command} & \textbf{ACL only command} \\
-    \hline
-    \citep{Gusfield:97}       & \verb|\citep|           &                           \\
-    \citealp{Gusfield:97}     & \verb|\citealp|         &                           \\
-    \citet{Gusfield:97}       & \verb|\citet|           &                           \\
-    \citeyearpar{Gusfield:97} & \verb|\citeyearpar|     &                           \\
-    \citeposs{Gusfield:97}    &                         & \verb|\citeposs|          \\
-    \hline
-  \end{tabular}
-  \caption{\label{citation-guide}
-    Citation commands supported by the style file.
-    The style is based on the natbib package and supports all natbib citation commands.
-    It also supports commands defined in previous ACL style files for compatibility.
-  }
+\begin{table*}[t]
+\centering
+\small
+\begin{tabular}{llccccc}
+\toprule
+Модель & Контекст & EM & F1 & EM-strict & EM-loose & BERTScore \\
+\midrule
+RoBERTa (extractive) & Oracle      & 0.6392 & 0.7519 & 0.6392 & 0.8103 & 0.9522 \\
+RoBERTa (extractive) & BM25 топ-1  & 0.3265 & 0.4076 & 0.3265 & 0.4459 & 0.9009 \\
+RoBERTa (extractive) & CE топ-1    & 0.5396 & 0.6403 & 0.5396 & 0.6880 & 0.9392 \\
+RoBERTa (extractive) & BM25 топ-5  & 0.5216 & 0.6119 & 0.5216 & 0.6512 & 0.9357 \\
+RoBERTa (extractive) & CE топ-5    & 0.5216 & 0.6119 & 0.5216 & 0.6512 & 0.9357 \\
+RoBERTa (extractive) & Mixed       & 0.5216 & 0.6119 & 0.5216 & 0.6512 & 0.9357 \\
+\midrule
+Qwen2.5-1.5B (gen)   & Oracle      & 0.4858 & 0.6608 & 0.4858 & 0.8634 & 0.9339 \\
+Qwen2.5-1.5B (gen)   & BM25 топ-1  & 0.2464 & 0.3552 & 0.2464 & 0.4521 & 0.8921 \\
+Qwen2.5-1.5B (gen)   & CE топ-1    & 0.4094 & 0.5629 & 0.4094 & 0.7287 & 0.9219 \\
+Qwen2.5-1.5B (gen)   & BM25 топ-5  & 0.2061 & 0.3567 & 0.2061 & 0.6470 & 0.8906 \\
+Qwen2.5-1.5B (gen)   & CE топ-5    & 0.2594 & 0.4291 & 0.2594 & 0.7646 & 0.9015 \\
+Qwen2.5-1.5B (gen)   & Mixed       & 0.2844 & 0.4480 & 0.2844 & 0.7544 & 0.9043 \\
+\bottomrule
+\end{tabular}
+\caption{Основные результаты экспериментов на MIRAGE}
+\label{tab:main}
 \end{table*}
 
-Table~\ref{citation-guide} shows the syntax supported by the style files.
-We encourage you to use the natbib styles.
-You can use the command \verb|\citet| (cite in text) to get ``author (year)'' citations, like this citation to a paper by \citet{Gusfield:97}.
-You can use the command \verb|\citep| (cite in parentheses) to get ``(author, year)'' citations \citep{Gusfield:97}.
-You can use the command \verb|\citealp| (alternative cite without parentheses) to get ``author, year'' citations, which is useful for using citations within parentheses (e.g. \citealp{Gusfield:97}).
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+Конфигурация & LLM-judge & EM & EM-loose & F1 & BERTScore \\
+\midrule
+ext oracle   & 0.1312 & 0.6392 & 0.8103 & 0.7519 & 0.9522 \\
+gen oracle   & 0.2546 & 0.4858 & 0.8634 & 0.6608 & 0.9339 \\
+ext CE топ-1 & 0.1128 & 0.5396 & 0.6880 & 0.6403 & 0.9392 \\
+gen CE топ-1 & 0.2232 & 0.4094 & 0.7287 & 0.5629 & 0.9219 \\
+\bottomrule
+\end{tabular}
+\caption{LLM-as-a-judge vs автоматические метрики}
+\label{tab:judge}
+\end{table}
 
-A possessive citation can be made with the command \verb|\citeposs|.
-This is not a standard natbib command, so it is generally not compatible
-with other style files.
+\section{Анализ результатов}
 
-\subsection{References}
+\subsection{Oracle vs retriever}
 
-\nocite{Ando2005,andrew2007scalable,rasooli-tetrault-2015}
+В oracle режиме достигается максимальное качество.
+Экстрактивная модель показывает EM=0.6392, тогда как генеративная — 0.4858.
+Разница объясняется тем, что извлечение точного ответа проще при наличии
+релевантного документа.
 
-The \LaTeX{} and Bib\TeX{} style files provided roughly follow the American Psychological Association format.
-If your own bib file is named \texttt{custom.bib}, then placing the following before any appendices in your \LaTeX{} file will generate the references section for you:
-\begin{quote}
-\begin{verbatim}
-\bibliography{custom}
-\end{verbatim}
-\end{quote}
+\subsection{Влияние ранкера}
 
-You can obtain the complete ACL Anthology as a Bib\TeX{} file from \url{https://aclweb.org/anthology/anthology.bib.gz}.
-To include both the Anthology and your own .bib file, use the following instead of the above.
-\begin{quote}
-\begin{verbatim}
-\bibliography{anthology,custom}
-\end{verbatim}
-\end{quote}
+CrossEncoder значительно превосходит BM25 при top-1 (recall 0.803 против 0.464),
+что приводит к заметному росту качества QA.
 
-Please see Section~\ref{sec:bibtex} for information on preparing Bib\TeX{} files.
+\subsection{Top-1 vs top-5}
 
-\subsection{Equations}
+Переход к top-5 повышает качество для экстрактивной модели,
+так как релевантный документ почти всегда присутствует в наборе.
 
-An example equation is shown below:
-\begin{equation}
-  \label{eq:example}
-  A = \pi r^2
-\end{equation}
+Для генеративной модели увеличение контекста не даёт прироста,
+а иногда ухудшает результат из-за добавления нерелевантной информации.
 
-Labels for equation numbers, sections, subsections, figures and tables
-are all defined with the \verb|\label{label}| command and cross references
-to them are made with the \verb|\ref{label}| command.
+\subsection{Экстрактивный vs генеративный подход}
 
-This an example cross-reference to Equation~\ref{eq:example}.
+Экстрактивная модель лучше по EM и F1.
+Генеративная модель показывает более высокие значения EM-loose,
+что связано с вариативностью формулировок ответов.
 
-\subsection{Appendices}
+\subsection{LLM-as-a-judge}
 
-Use \verb|\appendix| before any appendix section to switch the section numbering over to letters. See Appendix~\ref{sec:appendix} for an example.
+Метрика LLM-as-a-judge слабо коррелирует с EM,
+но ближе к EM-loose. Генеративная модель получает более высокие оценки,
+что связано с семантической гибкостью ответов.
 
-\section{Bib\TeX{} Files}
-\label{sec:bibtex}
+\section{Заключение}
 
-Unicode cannot be used in Bib\TeX{} entries, and some ways of typing special characters can disrupt Bib\TeX's alphabetization. The recommended way of typing special characters is shown in Table~\ref{tab:accents}.
+В работе сравнивались экстрактивный и генеративный подходы к QA на MIRAGE.
 
-Please ensure that Bib\TeX{} records contain DOIs or URLs when possible, and for all the ACL materials that you reference.
-Use the \verb|doi| field for DOIs and the \verb|url| field for URLs.
-If a Bib\TeX{} entry has a URL or DOI field, the paper title in the references section will appear as a hyperlink to the paper, using the hyperref \LaTeX{} package.
+Основные выводы:
+\begin{itemize}
+\item Экстрактивная модель обеспечивает наилучшее качество при наличии
+      релевантного документа.
+\item CrossEncoder значительно улучшает качество RAG по сравнению с BM25.
+\item Использование top-5 полезно для экстрактивного QA, но не для генеративного.
+\item Генеративные модели лучше отражают семантическое сходство,
+      но уступают по точным метрикам.
+\end{itemize}
 
-\section*{Limitations}
-
-This document does not cover the content requirements for ACL or any
-other specific venue.  Check the author instructions for
-information on
-maximum page lengths, the required ``Limitations'' section,
-and so on.
-
-\section*{Acknowledgments}
-
-This document has been adapted
-by Steven Bethard, Ryan Cotterell and Rui Yan
-from the instructions for earlier ACL and NAACL proceedings, including those for
-ACL 2019 by Douwe Kiela and Ivan Vuli\'{c},
-NAACL 2019 by Stephanie Lukin and Alla Roskovskaya,
-ACL 2018 by Shay Cohen, Kevin Gimpel, and Wei Lu,
-NAACL 2018 by Margaret Mitchell and Stephanie Lukin,
-Bib\TeX{} suggestions for (NA)ACL 2017/2018 from Jason Eisner,
-ACL 2017 by Dan Gildea and Min-Yen Kan,
-NAACL 2017 by Margaret Mitchell,
-ACL 2012 by Maggie Li and Michael White,
-ACL 2010 by Jing-Shin Chang and Philipp Koehn,
-ACL 2008 by Johanna D. Moore, Simone Teufel, James Allan, and Sadaoki Furui,
-ACL 2005 by Hwee Tou Ng and Kemal Oflazer,
-ACL 2002 by Eugene Charniak and Dekang Lin,
-and earlier ACL and EACL formats written by several people, including
-John Chen, Henry S. Thompson and Donald Walker.
-Additional elements were taken from the formatting instructions of the \emph{International Joint Conference on Artificial Intelligence} and the \emph{Conference on Computer Vision and Pattern Recognition}.
-
-\bibliography{custom}
-
-\appendix
-
-\section{Example Appendix}
-\label{sec:appendix}
-
-This is an appendix.
+Этот и другие отчeты, а также исходный код доступны в репозитории:
+\url{https://github.com/qw1zzard/itmo-ir-search}.
 
 \end{document}
